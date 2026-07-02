@@ -1,0 +1,44 @@
+[project]
+name = "pymol-mcp"
+version = "0.1.0"
+description = "A headless PyMOL MCP server for molecular visualization, GROMACS/LAMMPS MD workflows, and clathrate-hydrate cage analysis."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "wjgoarxiv" }]
+keywords = ["mcp", "pymol", "molecular-visualization", "gromacs", "lammps", "clathrate-hydrate", "md-analysis"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Chemistry",
+]
+
+# NOTE: `pymol` (pymol-open-source) is provided by the conda environment, NOT pip.
+# The server MUST run in an interpreter that can `import pymol2` (e.g. conda env `viz`).
+dependencies = [
+    "fastmcp>=3.4.0",
+    "numpy>=1.24",
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+# Universal trajectory/format bridge (GROMACS xtc/trr, LAMMPS dump, AMBER NetCDF, ...).
+# GPL-2.0-or-later — kept OUT of the hard dependency set and lazily imported.
+md = ["MDAnalysis>=2.7"]
+dev = ["pytest>=8", "pytest-timeout>=2"]
+
+[project.scripts]
+pymol-mcp = "pymol_mcp.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pymol_mcp"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

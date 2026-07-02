@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Test / cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+
+# PyMOL / render artifacts
+*.pse
+render_*.png
+/tmp_render/
+
+# OS
+.DS_Store
+
+# Secrets / local config — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+credentials.json
+secrets.json
+*.secret
+*_secret*
+.netrc
+.claude/settings.local.json
+.mcp.local.json

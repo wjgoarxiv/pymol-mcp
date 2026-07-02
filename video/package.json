@@ -1,0 +1,21 @@
+{
+  "name": "pymol-mcp-video",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remotion demo video for pymol-mcp",
+  "scripts": {
+    "render": "remotion render src/index.ts PymolMcpDemo out/pymol-mcp-demo.mp4",
+    "still": "remotion still src/index.ts PymolMcpDemo out/still.png",
+    "studio": "remotion studio src/index.ts"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3"
+  }
+}
