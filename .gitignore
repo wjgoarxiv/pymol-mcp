@@ -38,3 +38,6 @@ secrets.json
 .netrc
 .claude/settings.local.json
 .mcp.local.json
+
+# Local handoff doc (not for the public repo)
+HANDOFF.md
