@@ -39,6 +39,17 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/pymol_mcp"]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/.litcodex",
+    "/.litopencode",
+    "/.pr-checkouts",
+    "/video/node_modules",
+    "/video/out",
+    "/video/.remotion",
+    "/video/public/frames",
+]
+
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]

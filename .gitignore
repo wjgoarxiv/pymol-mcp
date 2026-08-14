@@ -41,3 +41,14 @@ secrets.json
 
 # Local handoff doc (not for the public repo)
 HANDOFF.md
+
+# LitOpenCode / local checkout state (not for package payloads)
+.litcodex/
+.litopencode/
+.pr-checkouts/
+
+# Video build dependencies and outputs (not package payloads)
+/video/node_modules/
+/video/out/
+/video/.remotion/
+/video/public/frames/

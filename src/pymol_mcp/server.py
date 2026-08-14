@@ -7,6 +7,7 @@ Logging goes to STDERR only -- never stdout (stdout is the JSON-RPC channel).
 from __future__ import annotations
 
 import logging
+import math
 import os
 import sys
 import tempfile
@@ -553,25 +554,39 @@ def _resolve_cell(cmd, obj: str, box):
     """Build a Cell (nm). Prefer a user-supplied per-frame box; fall back to get_symmetry."""
     from .analysis.geometry import Cell
 
-    if box:
-        return Cell.from_box(box)
+    if box is not None:
+        try:
+            values = [float(value) for value in box]
+        except (TypeError, ValueError) as exc:
+            raise ToolError("box must contain finite numeric values in nm") from exc
+        if len(values) not in (3, 6, 9) or not all(math.isfinite(value) for value in values):
+            raise ToolError("box must contain 3, 6, or 9 finite values in nm")
+        try:
+            return Cell.from_box(values)
+        except ValueError as exc:
+            raise ToolError(f"Invalid periodic box: {exc}") from exc
     sym = cmd.get_symmetry(obj) if obj else None
-    if sym and len(sym) >= 6 and sym[0] and sym[1] and sym[2]:
+    if sym and len(sym) >= 6 and sym[0] and sym[1] and sym[2] and all(math.isfinite(float(value)) for value in sym[:6]):
         a, b, c = sym[0] / 10.0, sym[1] / 10.0, sym[2] / 10.0  # Angstrom -> nm
-        return Cell.from_lengths_angles(a, b, c, sym[3], sym[4], sym[5])
+        try:
+            return Cell.from_lengths_angles(a, b, c, sym[3], sym[4], sym[5])
+        except ValueError as exc:
+            raise ToolError(f"Invalid periodic symmetry cell: {exc}") from exc
     raise ToolError(
         "No periodic box available. Pass `box` (3/6/9 values in nm) explicitly; "
         "get_symmetry returned no usable cell (expected for NPT/LAMMPS/xtc inputs)."
     )
 
 
-def _extract_waters(cmd, selection: str):
-    """Extract water (O, H1, H2) triplets in nm from PyMOL (coords are Angstrom -> x0.1)."""
+def _extract_waters(cmd, selection: str, state: int = 1):
+    """Extract water triplets in nm from one PyMOL state (coordinates are Angstrom -> x0.1)."""
     from .analysis.gro import WATER_RESNAMES, is_hydrogen, is_oxygen
 
+    if not isinstance(state, int) or state < 1:
+        raise ToolError("state must be a positive one-based PyMOL state")
     rows: list = []
     cmd.iterate_state(
-        1, selection,
+        state, selection,
         "rows.append((segi, chain, resi, name, resn, x, y, z))",
         space={"rows": rows},
     )
@@ -660,6 +675,37 @@ def hbond_network(
         }
 
     return SESSION.call(_hb, timeout=300)
+
+
+@mcp.tool
+def chill_plus(
+    selection: Annotated[str, Field(description="Selection of the water system.")] = "all",
+    box: Annotated[list[float] | None, Field(description="Periodic box in nm (3/6/9 values); else from get_symmetry.")] = None,
+    object_name: Annotated[str | None, Field(description="Object whose box to use. Defaults to the selection's object.")] = None,
+    cutoff_nm: Annotated[float, Field(description="CHILL+ O-O cutoff in nm.", gt=0)] = 0.35,
+    state: Annotated[int, Field(description="One-based PyMOL state to analyze.", ge=1)] = 1,
+) -> dict:
+    """Classify water molecules as liquid, ice, or hydrate with CHILL+.
+
+    The result contains the six class counts, per-water classes, fractions, and the unique
+    O-O cutoff network in water input order.
+    """
+    from .analysis.chill_plus import calculate_chill_plus
+
+    def _chill(cmd):
+        obj = _pick_object(cmd, selection, object_name)
+        cell = _resolve_cell(cmd, obj, box)
+        waters = _extract_waters(cmd, selection, state)
+        if not waters:
+            raise ToolError("No complete water molecules found in the selection.")
+        try:
+            result = calculate_chill_plus(waters, cell, cutoff_nm)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+        result.update({"object": obj, "selection": selection, "state": state})
+        return result
+
+    return SESSION.call(_chill, timeout=600)
 
 
 def _extract_guests(cmd, selection: str):
@@ -806,5 +852,83 @@ def mark_cages(
         cmd.delete("cages")
         cmd.load_cgo(cgo, "cages")
         return {"object": "cages", "drawn": counts, "n_cages": sum(counts.values())}
+
+    return SESSION.call(_f, timeout=600)
+
+
+@mcp.tool
+def mark_chill_plus(
+    selection: Annotated[str, Field(description="Selection of the water system.")] = "all",
+    box: Annotated[list[float] | None, Field(description="Periodic box in nm (3/6/9 values); else from get_symmetry.")] = None,
+    object_name: Annotated[str | None, Field(description="Object whose box to use. Defaults to the selection's object.")] = None,
+    cutoff_nm: Annotated[float, Field(description="CHILL+ O-O cutoff in nm.", gt=0)] = 0.35,
+    edge_radius: Annotated[float, Field(description="CHILL+ network edge radius in Angstrom.", gt=0)] = 0.12,
+    class_codes: Annotated[list[int] | None, Field(description="Non-liquid CHILL+ classes to draw (1-5); default all.")] = None,
+    state: Annotated[int, Field(description="One-based PyMOL state to analyze.", ge=1)] = 1,
+) -> dict:
+    """Draw the classified CHILL+ O-O network as a colored CGO object named `chill_plus`."""
+    import numpy as np
+
+    from .analysis.chill_plus import CHILL_CLASS_COLORS, calculate_chill_plus
+
+    if class_codes is not None:
+        invalid = [code for code in class_codes if not isinstance(code, int) or code < 1 or code > 5]
+        if invalid:
+            raise ToolError(f"class_codes must contain only integers from 1 to 5; got {invalid}")
+    wanted = set(class_codes) if class_codes is not None else None
+
+    def _f(cmd):
+        from pymol.cgo import COLOR, CYLINDER  # float constants; safe on the worker thread
+
+        names = set(cmd.get_names("all"))
+        if "chill_plus" in names and cmd.get_type("chill_plus") != "object:cgo":
+            raise ToolError("The name 'chill_plus' belongs to an existing non-CGO object.")
+        if "chill_plus" in names:
+            cmd.delete("chill_plus")
+
+        obj = _pick_object(cmd, selection, object_name)
+        cell = _resolve_cell(cmd, obj, box)
+        waters = _extract_waters(cmd, selection, state)
+        if not waters:
+            raise ToolError("No complete water molecules found in the selection.")
+        try:
+            result = calculate_chill_plus(waters, cell, cutoff_nm)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+
+        positions = [np.asarray(water[0], dtype=float) for water in waters]
+        cgo: list[float] = []
+        drawn_by_class: dict[str, int] = {}
+        for i, j in result["edges"]:
+            class_i = result["per_atom_class"][i]
+            class_j = result["per_atom_class"][j]
+            if class_i == 0 or class_j == 0:
+                continue
+            if wanted is not None and (class_i not in wanted or class_j not in wanted):
+                continue
+            rgb = _hex_rgb(CHILL_CLASS_COLORS[class_i])
+            a = positions[i] * 10.0
+            b = (positions[i] + cell.mic(positions[j] - positions[i])) * 10.0
+            cgo += [
+                COLOR, *rgb,
+                CYLINDER,
+                float(a[0]), float(a[1]), float(a[2]),
+                float(b[0]), float(b[1]), float(b[2]),
+                edge_radius, *rgb, *rgb,
+            ]
+            key = str(class_i)
+            drawn_by_class[key] = drawn_by_class.get(key, 0) + 1
+
+        if not cgo:
+            raise ToolError("No non-liquid CHILL+ network edges matched the requested classes.")
+        cmd.load_cgo(cgo, "chill_plus")
+        return {
+            "algorithm": "CHILL+",
+            "object": "chill_plus",
+            "n_water": result["n_water"],
+            "state": state,
+            "n_edges": sum(drawn_by_class.values()),
+            "drawn_by_class": drawn_by_class,
+        }
 
     return SESSION.call(_f, timeout=600)

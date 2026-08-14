@@ -56,3 +56,61 @@ def test_identify_cages_via_mcp():
             return True
 
     assert _run(scenario())
+
+
+@pytest.mark.skipif(not os.path.exists(GRO_SII), reason="sII reference .gro not present")
+def test_chill_plus_and_visualization_via_mcp():
+    async def scenario():
+        async with Client(mcp) as client:
+            await client.call_tool("load_structure", {"path": GRO_SII, "object_name": "hyd"})
+            result = (await client.call_tool("chill_plus", {"selection": "hyd"})).data
+            assert result["algorithm"] == "CHILL+", result
+            assert result["class_counts"] == [0, 0, 0, 0, 1088, 0], result
+            assert result["n_water"] == 1088, result
+            assert result["state"] == 1, result
+            assert len(result["edges"]) == 2176, result
+
+            marked = (await client.call_tool("mark_chill_plus", {"selection": "hyd"})).data
+            assert marked["object"] == "chill_plus", marked
+            assert marked["n_edges"] == 2176, marked
+            assert marked["state"] == 1, marked
+            assert marked["drawn_by_class"] == {"4": 2176}, marked
+            rendered = await client.call_tool("render_image", {"selection": "hyd", "width": 256, "height": 256})
+            assert rendered.content and rendered.content[0].type == "image", rendered
+            return True
+
+    assert _run(scenario())
+
+
+@pytest.mark.skipif(not os.path.exists(GRO_SII), reason="sII reference .gro not present")
+def test_mark_chill_plus_preserves_a_molecule_name_collision():
+    async def scenario():
+        async with Client(mcp) as client:
+            await client.call_tool("load_structure", {"path": GRO_SII, "object_name": "chill_plus"})
+            result = await client.call_tool(
+                "mark_chill_plus",
+                {"selection": "chill_plus"},
+                raise_on_error=False,
+            )
+            assert result.is_error
+            info = (await client.call_tool("get_object_info", {"name": "chill_plus"})).data
+            assert info["n_atoms"] == 3264, info
+            return True
+
+    assert _run(scenario())
+
+
+@pytest.mark.skipif(not os.path.exists(GRO_SII), reason="sII reference .gro not present")
+def test_chill_plus_rejects_an_invalid_periodic_box():
+    async def scenario():
+        async with Client(mcp) as client:
+            await client.call_tool("load_structure", {"path": GRO_SII, "object_name": "hyd"})
+            result = await client.call_tool(
+                "chill_plus",
+                {"selection": "hyd", "box": [1.0, 2.0]},
+                raise_on_error=False,
+            )
+            assert result.is_error
+            return True
+
+    assert _run(scenario())

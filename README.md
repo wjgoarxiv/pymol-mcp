@@ -116,7 +116,7 @@ What's the mean H-bond coordination of the water in this structure?
 | **View / Render** | `orient` · `zoom` · `turn` · `render_image` → 🖼️ inline PNG |
 | **Measurement** | `measure_distance` · `measure_angle` · `measure_dihedral` · `align` · `save_file` |
 | **Trajectory / MD** | `load_trajectory` (GROMACS/DCD) · `load_trajectory_mda` (LAMMPS/NetCDF via MDAnalysis) |
-| **Clathrate domain** | `identify_cages` (TRACE) · `cage_occupancy` · `mark_cages` · `hbond_network` · `order_parameter` (F3 / F4) |
+| **Clathrate domain** | `identify_cages` (TRACE) · `cage_occupancy` · `mark_cages` · `hbond_network` · `order_parameter` (F3 / F4) · `chill_plus` · `mark_chill_plus` |
 | **Scripting (opt-in)** | `run_pml` · `run_python` |
 
 ## Domain: clathrate-hydrate science
@@ -130,6 +130,8 @@ a signed `atan2` dihedral for F4, and a periodic-image KDTree for neighbour sear
 - **`mark_cages`** — drop a colored sphere at each cage centre so `render_image` can show the cage lattice.
 - **`order_parameter`** — F4 (torsional) and F3 (three-body angular). F4 ≈ 0.7–0.95 → hydrate, ≈ 0 → liquid, ≈ −0.4 → ice Ih.
 - **`hbond_network`** — water H-bond graph (O–O ≤ 0.36 nm and a donor H–O···O angle < 35°) with coordination stats.
+- **`chill_plus`** — classify each water as liquid, ice, or hydrate with the CHILL+ q3 bond correlation method. It returns six class counts, per-water classes, fractions, and the unique O–O network. The default cutoff is 0.35 nm. The `state` argument uses one-based PyMOL states and defaults to 1.
+- **`mark_chill_plus`** — draw the non-liquid CHILL+ O–O network as a color-coded CGO overlay named `chill_plus` for `render_image`. It uses the same one-based `state` argument.
 
 <p align="center"><img src="./assets/cages_demo.png" width="66%" /><br/><em>Detected sII cages drawn as wireframe polyhedra: 5¹² dodecahedra (cyan) around a 5¹²6⁴ cage (red), sharing faces.</em></p>
 

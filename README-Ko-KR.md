@@ -114,7 +114,7 @@ md.gro + traj.xtc 를 로드하고, CO2 게스트를 구로 표시한 뒤 50번�
 | **뷰 / 렌더** | `orient` · `zoom` · `turn` · `render_image` → 🖼️ 인라인 PNG |
 | **측정** | `measure_distance` · `measure_angle` · `measure_dihedral` · `align` · `save_file` |
 | **궤적 / MD** | `load_trajectory` (GROMACS/DCD) · `load_trajectory_mda` (LAMMPS/NetCDF, MDAnalysis) |
-| **클라스레이트 도메인** | `identify_cages` (TRACE) · `cage_occupancy` · `mark_cages` · `hbond_network` · `order_parameter` (F3 / F4) |
+| **클라스레이트 도메인** | `identify_cages` (TRACE) · `cage_occupancy` · `mark_cages` · `hbond_network` · `order_parameter` (F3 / F4) · `chill_plus` · `mark_chill_plus` |
 | **스크립팅 (옵트인)** | `run_pml` · `run_python` |
 
 ## 도메인: 클라스레이트 하이드레이트 과학
@@ -127,6 +127,8 @@ md.gro + traj.xtc 를 로드하고, CO2 게스트를 구로 표시한 뒤 50번�
 - **`mark_cages`** — 각 케이지 중심에 색상 구를 배치하여 `render_image`로 케이지 격자를 시각화.
 - **`order_parameter`** — F4(비틀림), F3(3체 각도). F4 ≈ 0.7–0.95 → 하이드레이트, ≈ 0 → 액체, ≈ −0.4 → 얼음 Ih.
 - **`hbond_network`** — 물 수소결합 그래프 (O–O ≤ 0.36 nm 및 도너 H–O···O 각 < 35°) + 배위 통계.
+- **`chill_plus`** — CHILL+ q3 결합 상관 방법으로 각 물을 액체·얼음·하이드레이트로 분류합니다. 6개 클래스별 개수, 물별 클래스, 분율, 고유 O–O 네트워크를 반환합니다. 기본 컷오프는 0.35 nm입니다. `state`는 1부터 시작하는 PyMOL 상태이며 기본값은 1입니다.
+- **`mark_chill_plus`** — 비액체 CHILL+ O–O 네트워크를 `chill_plus` 이름의 색상 CGO 오버레이로 그립니다. `render_image`에서 렌더링할 수 있습니다. 같은 `state` 인자를 사용합니다.
 
 <p align="center"><img src="./assets/cages_demo.png" width="66%" /><br/><em>검출된 sII 케이지를 와이어프레임 다면체로 시각화: 5¹² 십이면체(청록)가 5¹²6⁴ 케이지(빨강)를 면 공유로 둘러싼 모습.</em></p>
 
