@@ -43,7 +43,7 @@
 ## Features
 
 - **Embedded & headless** — one long-lived PyMOL instance on a dedicated worker thread; nothing to click, works in CI.
-- **The model can *see*** — `render_image` ray-traces and returns a PNG as MCP image content.
+- **The model can *see*** — `render_image` ray-traces and returns a PNG as MCP image content. Use `ray_style="pymolwiki_color"` for the PyMOLWiki quantized-color outline profile.
 - **MD-native** — load GROMACS `.gro`+`.xtc`, or bridge LAMMPS/NetCDF/… through MDAnalysis with in-memory coordinate injection.
 - **Clathrate-hydrate toolkit** — H-bond networks and **F3/F4** order parameters ported from a validated Rust engine, all in nm with correct triclinic PBC.
 - **Typed, safe tools** — every argument is schema-validated; the arbitrary-code passthrough is **opt-in** (`PYMOL_MCP_ALLOW_CODE_EXEC=1`).
@@ -119,6 +119,30 @@ What's the mean H-bond coordination of the water in this structure?
 | **Clathrate domain** | `identify_cages` (TRACE) · `cage_occupancy` · `mark_cages` · `hbond_network` · `order_parameter` (F3 / F4) · `chill_plus` · `mark_chill_plus` |
 | **Scripting (opt-in)** | `run_pml` · `run_python` |
 
+### PyMOLWiki Ray styles
+
+`render_image` accepts a fixed `ray_style` profile. If you omit it, the tool uses `pymolwiki_outline`.
+Use `ray_style="default"` explicitly to preserve the current PyMOL settings.
+
+| Profile | PyMOL setting | Use |
+|---|---:|---|
+| `default` | unchanged | Preserve the current scene style |
+| `pymolwiki_outline` | `ray_trace_mode=1` | Color with black outlines |
+| `pymolwiki_bw` | `ray_trace_mode=2` | Black-and-white outline mode |
+| `pymolwiki_color` | `ray_trace_mode=3` | Quantized color with black outlines |
+
+The PyMOLWiki profiles set antialiasing to 2. They use the built-in PyMOL ray tracer.
+They restore the previous ray settings after each render. Set a white background for the closest match to the PyMOLWiki examples.
+
+```json
+{
+  "selection": "all",
+  "width": 1600,
+  "height": 1200,
+  "ray_style": "pymolwiki_color"
+}
+```
+
 ## Domain: clathrate-hydrate science
 
 Ported from a validated Rust reference implementation and re-checked against ground truth. All analysis runs in
@@ -128,6 +152,7 @@ a signed `atan2` dihedral for F4, and a periodic-image KDTree for neighbour sear
 - **`identify_cages`** — full TRACE cage perception: ring finding → geometric validation → constraint-propagation assembly → Euler (SEC) validation → face-count typing (5¹², 5¹²6², 5¹²6⁴, …) and an sI/sII/sH structure call.
 - **`cage_occupancy`** — assign guest molecules (CO₂/CH₄) to cages and report per-type occupancy (θ_S, θ_L).
 - **`mark_cages`** — drop a colored sphere at each cage centre so `render_image` can show the cage lattice.
+- **`mark_cages` geometry defaults** — use a bold 0.18 Å cage edge radius and a 0.38 Å vertex radius by default. Pass `edge_radius` or `vertex_radius` to override them.
 - **`order_parameter`** — F4 (torsional) and F3 (three-body angular). F4 ≈ 0.7–0.95 → hydrate, ≈ 0 → liquid, ≈ −0.4 → ice Ih.
 - **`hbond_network`** — water H-bond graph (O–O ≤ 0.36 nm and a donor H–O···O angle < 35°) with coordination stats.
 - **`chill_plus`** — classify each water as liquid, ice, or hydrate with the CHILL+ q3 bond correlation method. It returns six class counts, per-water classes, fractions, and the unique O–O network. The default cutoff is 0.35 nm. The `state` argument uses one-based PyMOL states and defaults to 1.

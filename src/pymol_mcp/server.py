@@ -12,7 +12,7 @@ import os
 import sys
 import tempfile
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
@@ -140,31 +140,80 @@ def reset_session() -> str:
 # ----------------------------------------------------------------------------
 # Rendering (vision loop)
 # ----------------------------------------------------------------------------
+_RAY_STYLE_SETTINGS = {
+    "pymolwiki_outline": {
+        "ray_trace_mode": 1,
+        "ray_trace_color": "black",
+        "antialias": 2,
+        "ray_opaque_background": 1,
+        "ray_default_renderer": 0,
+        "ray_trace_fog": 0,
+    },
+    "pymolwiki_bw": {
+        "ray_trace_mode": 2,
+        "ray_trace_color": "black",
+        "antialias": 2,
+        "ray_opaque_background": 1,
+        "ray_default_renderer": 0,
+        "ray_trace_fog": 0,
+    },
+    "pymolwiki_color": {
+        "ray_trace_mode": 3,
+        "ray_trace_color": "black",
+        "antialias": 2,
+        "ray_opaque_background": 1,
+        "ray_default_renderer": 0,
+        "ray_trace_fog": 0,
+    },
+}
+
+
+def _apply_ray_style(cmd, style: str) -> dict[str, str]:
+    settings = _RAY_STYLE_SETTINGS.get(style, {})
+    previous = {name: cmd.get(name) for name in settings}
+    for name, value in settings.items():
+        cmd.set(name, value)
+    return previous
+
+
+def _restore_ray_style(cmd, previous: dict[str, str]) -> None:
+    for name, value in previous.items():
+        cmd.set(name, value)
+
+
 @mcp.tool
 def render_image(
     selection: Annotated[str, Field(description="Selection to zoom before rendering ('all' = whole scene).")] = "all",
     width: Annotated[int, Field(description="Image width in pixels.", ge=16, le=2000)] = 800,
     height: Annotated[int, Field(description="Image height in pixels.", ge=16, le=2000)] = 600,
     zoom: Annotated[bool, Field(description="Zoom/orient onto the selection before rendering.")] = True,
+    ray_style: Annotated[
+        Literal["default", "pymolwiki_outline", "pymolwiki_bw", "pymolwiki_color"],
+        Field(description="Ray profile. The default is the PyMOLWiki outline profile."),
+    ] = "pymolwiki_outline",
 ) -> Image:
-    """Ray-trace the current scene (headless CPU raytracer) to a PNG and return it inline."""
+    """Ray-trace the current scene to a PNG and return it inline."""
     def _render(cmd):
         if selection != "all" and cmd.count_atoms(selection) == 0:
             raise ToolError(f"Selection '{selection}' matched 0 atoms")
         if zoom:
             cmd.zoom(selection)
-        cmd.ray(width, height)
-        fd, tmp = tempfile.mkstemp(suffix=".png")
-        os.close(fd)
+        previous = _apply_ray_style(cmd, ray_style)
         try:
-            cmd.png(tmp, dpi=150)
-            with open(tmp, "rb") as fh:
-                data = fh.read()
-        finally:
+            cmd.ray(width, height)
+            fd, tmp = tempfile.mkstemp(suffix=".png")
+            os.close(fd)
             try:
-                os.remove(tmp)
-            except OSError:
-                pass
+                cmd.png(tmp, dpi=300 if ray_style != "default" else 150)
+                with open(tmp, "rb") as fh:
+                    data = fh.read()
+            finally:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+        finally:
+            _restore_ray_style(cmd, previous)
         if len(data) < 100:
             raise ToolError("Render produced an empty image")
         return data
@@ -806,8 +855,8 @@ def mark_cages(
     selection: Annotated[str, Field(description="Selection of the water system.")] = "all",
     box: Annotated[list[float] | None, Field(description="Periodic box in nm (3/6/9 values); else from get_symmetry.")] = None,
     object_name: Annotated[str | None, Field(description="Object whose box to use.")] = None,
-    edge_radius: Annotated[float, Field(description="Cage edge (cylinder) radius in Angstrom.", gt=0)] = 0.12,
-    vertex_radius: Annotated[float, Field(description="Cage vertex (sphere) radius in Angstrom.", gt=0)] = 0.32,
+    edge_radius: Annotated[float, Field(description="Cage edge (cylinder) radius in Angstrom.", gt=0)] = 0.18,
+    vertex_radius: Annotated[float, Field(description="Cage vertex (sphere) radius in Angstrom.", gt=0)] = 0.38,
     cage_types: Annotated[list[str] | None, Field(description="Only draw these cage types (e.g. ['5^12','5^12 6^4']); default all.")] = None,
 ) -> dict:
     """Draw each detected cage as a **wireframe polyhedron** — cylinders along the O-O ring edges

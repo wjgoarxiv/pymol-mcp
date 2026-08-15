@@ -8,14 +8,34 @@ import os
 
 import pytest
 from fastmcp import Client
+from pymol.cgo import COLOR, CYLINDER, SPHERE
 
-from pymol_mcp.server import mcp
+from pymol_mcp.server import SESSION, mcp
 
 GRO_SII = os.path.join(os.path.dirname(__file__), "fixtures", "hydrate_sII.gro")
 
 
 def _run(coro):
     return asyncio.run(asyncio.wait_for(coro, timeout=180))
+
+
+def _cgo_radii(data):
+    spheres = []
+    cylinders = []
+    index = 0
+    while index < len(data):
+        opcode = data[index]
+        if opcode == COLOR:
+            index += 4
+        elif opcode == SPHERE:
+            spheres.append(data[index + 4])
+            index += 5
+        elif opcode == CYLINDER:
+            cylinders.append(data[index + 7])
+            index += 14
+        else:
+            raise AssertionError(f"unexpected CGO opcode at {index}: {opcode}")
+    return spheres, cylinders
 
 
 @pytest.mark.skipif(not os.path.exists(GRO_SII), reason="sII reference .gro not present")
@@ -40,6 +60,44 @@ def test_order_parameter_and_hbond_via_mcp():
 
 
 @pytest.mark.skipif(not os.path.exists(GRO_SII), reason="sII reference .gro not present")
+def test_mark_cages_uses_default_and_explicit_geometry():
+    async def scenario():
+        async with Client(mcp) as client:
+            await client.call_tool("load_structure", {"path": GRO_SII, "object_name": "hyd"})
+            captured = []
+
+            def install_capture(cmd):
+                original = cmd.load_cgo
+
+                def load_cgo(data, name, *args, **kwargs):
+                    captured.append(list(data))
+                    return original(data, name, *args, **kwargs)
+
+                cmd.load_cgo = load_cgo
+                return original
+
+            original = SESSION.call(install_capture)
+            try:
+                await client.call_tool("mark_cages", {"selection": "hyd"})
+                await client.call_tool(
+                    "mark_cages",
+                    {"selection": "hyd", "edge_radius": 0.12, "vertex_radius": 0.32},
+                )
+            finally:
+                SESSION.call(lambda cmd: setattr(cmd, "load_cgo", original))
+
+            default_spheres, default_cylinders = _cgo_radii(captured[0])
+            override_spheres, override_cylinders = _cgo_radii(captured[1])
+            assert set(default_spheres) == {0.38}
+            assert set(default_cylinders) == {0.18}
+            assert set(override_spheres) == {0.32}
+            assert set(override_cylinders) == {0.12}
+            return True
+
+    assert _run(scenario())
+
+
+@pytest.mark.skipif(not os.path.exists(GRO_SII), reason="sII reference .gro not present")
 def test_identify_cages_via_mcp():
     async def scenario():
         async with Client(mcp) as client:
@@ -49,7 +107,12 @@ def test_identify_cages_via_mcp():
             assert res["counts"].get("5^12") == 128, res
             assert res["counts"].get("5^12 6^4") == 64, res
 
-            marked = (await client.call_tool("mark_cages", {"selection": "hyd"})).data
+            marked = (
+                await client.call_tool(
+                    "mark_cages",
+                    {"selection": "hyd", "edge_radius": 0.12, "vertex_radius": 0.32},
+                )
+            ).data
             assert marked["object"] == "cages", marked
             assert marked["n_cages"] == 192, marked
             assert marked["drawn"].get("5^12") == 128 and marked["drawn"].get("5^12 6^4") == 64, marked

@@ -44,7 +44,10 @@ def test_stdio_stream_stays_clean_under_load(tmp_path):
 
                 # Fire several calls CONCURRENTLY, incl. a ray-trace (heavy fd-1 output).
                 results = await asyncio.gather(
-                    session.call_tool("render_image", {"width": 160, "height": 120}),
+                    session.call_tool(
+                        "render_image",
+                        {"width": 160, "height": 120},
+                    ),
                     session.call_tool("list_objects", {}),
                     session.call_tool("render_image", {"width": 120, "height": 90}),
                 )

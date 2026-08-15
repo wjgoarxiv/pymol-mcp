@@ -43,7 +43,7 @@
 ## 기능
 
 - **임베드 & 헤드리스** — 전용 워커 스레드에서 단일 PyMOL 인스턴스를 유지; 클릭할 것이 없고 CI에서도 동작.
-- **모델이 *볼 수* 있음** — `render_image`가 레이트레이싱한 PNG를 MCP 이미지 콘텐츠로 반환.
+- **모델이 *볼 수* 있음** — `render_image`가 레이트레이싱한 PNG를 MCP 이미지 콘텐츠로 반환합니다. PyMOLWiki의 양자화 색상·윤곽선 프로필에는 `ray_style="pymolwiki_color"`를 사용합니다.
 - **MD 네이티브** — GROMACS `.gro`+`.xtc`를 바로 읽고, LAMMPS/NetCDF는 MDAnalysis로 좌표를 메모리에 직접 주입해 연결.
 - **클라스레이트 하이드레이트 도구** — 검증된 Rust 엔진에서 이식한 수소결합 네트워크와 **F3/F4** 오더 파라미터. 모든 계산은 nm 단위로, 삼사정계 PBC까지 정확히 처리.
 - **타입 지정, 안전한 도구** — 모든 인자가 스키마로 검증됨; 임의 코드 실행은 **옵트인**(`PYMOL_MCP_ALLOW_CODE_EXEC=1`).
@@ -117,6 +117,30 @@ md.gro + traj.xtc 를 로드하고, CO2 게스트를 구로 표시한 뒤 50번�
 | **클라스레이트 도메인** | `identify_cages` (TRACE) · `cage_occupancy` · `mark_cages` · `hbond_network` · `order_parameter` (F3 / F4) · `chill_plus` · `mark_chill_plus` |
 | **스크립팅 (옵트인)** | `run_pml` · `run_python` |
 
+### PyMOLWiki Ray 스타일
+
+`render_image`는 고정된 `ray_style` 프로필을 지원합니다. 생략하면 `pymolwiki_outline`을 사용합니다.
+현재 PyMOL 설정을 유지하려면 `ray_style="default"`를 명시하세요.
+
+| 프로필 | PyMOL 설정 | 용도 |
+|---|---:|---|
+| `default` | 변경 없음 | 현재 장면 스타일 유지 |
+| `pymolwiki_outline` | `ray_trace_mode=1` | 색상과 검은 윤곽선 |
+| `pymolwiki_bw` | `ray_trace_mode=2` | 흑백 윤곽선 모드 |
+| `pymolwiki_color` | `ray_trace_mode=3` | 양자화 색상과 검은 윤곽선 |
+
+PyMOLWiki 프로필은 안티앨리어싱을 2로 설정합니다. 기본 PyMOL 레이트레이서를 사용합니다.
+렌더링이 끝나면 이전 레이트레이싱 설정을 복원합니다. PyMOLWiki 예시와 가장 비슷한 결과에는 흰색 배경을 사용하세요.
+
+```json
+{
+  "selection": "all",
+  "width": 1600,
+  "height": 1200,
+  "ray_style": "pymolwiki_color"
+}
+```
+
 ## 도메인: 클라스레이트 하이드레이트 과학
 
 검증된 Rust 레퍼런스 구현에서 이식한 뒤 정답값과 대조해 재검증했습니다. 모든 분석은 **나노미터** 단위이며,
@@ -125,6 +149,7 @@ md.gro + traj.xtc 를 로드하고, CO2 게스트를 구로 표시한 뒤 50번�
 - **`identify_cages`** — 완전한 TRACE 케이지 인식: 링 탐색 → 기하 검증 → 제약 전파 조립 → 오일러(SEC) 검증 → 면 개수로 유형 분류(5¹², 5¹²6², 5¹²6⁴, …) 및 sI/sII/sH 구조 판정.
 - **`cage_occupancy`** — 게스트 분자(CO₂/CH₄)를 케이지에 할당하고 유형별 점유율(θ_S, θ_L) 보고.
 - **`mark_cages`** — 각 케이지 중심에 색상 구를 배치하여 `render_image`로 케이지 격자를 시각화.
+- **`mark_cages` 기하 기본값** — 기본 케이지 edge 반지름은 0.18 Å, vertex 반지름은 0.38 Å입니다. `edge_radius` 또는 `vertex_radius`로 재정의할 수 있습니다.
 - **`order_parameter`** — F4(비틀림), F3(3체 각도). F4 ≈ 0.7–0.95 → 하이드레이트, ≈ 0 → 액체, ≈ −0.4 → 얼음 Ih.
 - **`hbond_network`** — 물 수소결합 그래프 (O–O ≤ 0.36 nm 및 도너 H–O···O 각 < 35°) + 배위 통계.
 - **`chill_plus`** — CHILL+ q3 결합 상관 방법으로 각 물을 액체·얼음·하이드레이트로 분류합니다. 6개 클래스별 개수, 물별 클래스, 분율, 고유 O–O 네트워크를 반환합니다. 기본 컷오프는 0.35 nm입니다. `state`는 1부터 시작하는 PyMOL 상태이며 기본값은 1입니다.
