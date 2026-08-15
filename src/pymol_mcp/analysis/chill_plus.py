@@ -75,11 +75,26 @@ def _mic(delta, cell: Cell):
     return (fractional - rounded) @ cell.H
 
 
-def _neighbor_indices(oxygens: list[np.ndarray], cell: Cell, cutoff_nm: float) -> list[list[int]]:
-    if not oxygens:
-        return []
-    coordinates = np.asarray(oxygens, dtype=float)
-    cutoff_sq = cutoff_nm * cutoff_nm
+def _orthorhombic_lengths(cell: Cell) -> np.ndarray | None:
+    matrix = np.asarray(cell.H, dtype=float)
+    if matrix.shape != (3, 3) or not np.isfinite(matrix).all():
+        return None
+    diagonal = np.diag(np.diag(matrix))
+    scale = max(1.0, float(np.max(np.abs(np.diag(diagonal)))))
+    roundoff = 8.0 * np.finfo(float).eps * scale
+    if np.any(np.abs(matrix - diagonal) > roundoff):
+        return None
+    lengths = np.abs(np.diag(diagonal))
+    if np.any(lengths <= 0.0):
+        return None
+    return lengths
+
+
+def _neighbor_indices_bruteforce(
+    coordinates: np.ndarray,
+    cell: Cell,
+    cutoff_sq: float,
+) -> list[list[int]]:
     adjacency: list[list[int]] = []
     for i, center in enumerate(coordinates):
         distances = _mic(coordinates - center, cell)
@@ -88,6 +103,81 @@ def _neighbor_indices(oxygens: list[np.ndarray], cell: Cell, cutoff_nm: float) -
         candidates = np.flatnonzero(distance_sq <= cutoff_sq)
         adjacency.append(sorted(candidates.tolist(), key=lambda j: (float(distance_sq[j]), j)))
     return adjacency
+
+
+def _neighbor_indices_cell_list(
+    coordinates: np.ndarray,
+    cell: Cell,
+    cutoff_nm: float,
+    cutoff_sq: float,
+    lengths: np.ndarray,
+) -> list[list[int]]:
+    with np.errstate(over="ignore", divide="ignore", invalid="ignore"):
+        ratios = lengths / cutoff_nm
+    if not np.isfinite(ratios).all() or np.any(ratios > np.iinfo(np.int64).max):
+        return _neighbor_indices_bruteforce(coordinates, cell, cutoff_sq)
+    dimensions = tuple(max(int(np.floor(ratio)), 1) for ratio in ratios)
+
+    def cell_of(position: np.ndarray) -> tuple[int, int, int]:
+        indices = []
+        for coordinate, length, dimension in zip(position, lengths, dimensions):
+            wrapped = coordinate - length * np.floor(coordinate / length)
+            if not (wrapped >= 0.0) or wrapped >= length:
+                wrapped = 0.0
+            indices.append(min(int(np.floor((wrapped / length) * dimension)), dimension - 1))
+        return tuple(indices)
+
+    buckets: dict[tuple[int, int, int], list[int]] = {}
+    atom_cells: list[tuple[int, int, int]] = []
+    for index, position in enumerate(coordinates):
+        bucket = cell_of(position)
+        buckets.setdefault(bucket, []).append(index)
+        atom_cells.append(bucket)
+
+    def neighboring_bins(index: int, dimension: int) -> tuple[int, ...]:
+        if dimension <= 2:
+            return tuple(range(dimension))
+        return ((index - 1) % dimension, index, (index + 1) % dimension)
+
+    adjacency: list[list[int]] = []
+    for i, center in enumerate(coordinates):
+        bucket = atom_cells[i]
+        candidate_indices: list[int] = []
+        xbins = neighboring_bins(bucket[0], dimensions[0])
+        ybins = neighboring_bins(bucket[1], dimensions[1])
+        zbins = neighboring_bins(bucket[2], dimensions[2])
+        for x in xbins:
+            for y in ybins:
+                for z in zbins:
+                    for j in buckets.get((x, y, z), ()):
+                        if i == j:
+                            continue
+                        candidate_indices.append(j)
+        if candidate_indices:
+            candidate_coordinates = coordinates[candidate_indices]
+            deltas = _mic(candidate_coordinates - center, cell)
+            distance_sq = np.einsum("ij,ij->i", deltas, deltas)
+            candidates = [
+                (float(distance), j)
+                for distance, j in zip(distance_sq, candidate_indices)
+                if distance <= cutoff_sq
+            ]
+        else:
+            candidates = []
+        candidates.sort(key=lambda pair: (pair[0], pair[1]))
+        adjacency.append([j for _, j in candidates])
+    return adjacency
+
+
+def _neighbor_indices(oxygens: list[np.ndarray], cell: Cell, cutoff_nm: float) -> list[list[int]]:
+    if not oxygens:
+        return []
+    coordinates = np.asarray(oxygens, dtype=float)
+    cutoff_sq = cutoff_nm * cutoff_nm
+    lengths = _orthorhombic_lengths(cell)
+    if lengths is not None:
+        return _neighbor_indices_cell_list(coordinates, cell, cutoff_nm, cutoff_sq, lengths)
+    return _neighbor_indices_bruteforce(coordinates, cell, cutoff_sq)
 
 
 def _y3(direction: np.ndarray) -> tuple[complex, complex, complex, complex]:

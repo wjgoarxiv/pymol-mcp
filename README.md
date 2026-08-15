@@ -132,6 +132,7 @@ a signed `atan2` dihedral for F4, and a periodic-image KDTree for neighbour sear
 - **`hbond_network`** — water H-bond graph (O–O ≤ 0.36 nm and a donor H–O···O angle < 35°) with coordination stats.
 - **`chill_plus`** — classify each water as liquid, ice, or hydrate with the CHILL+ q3 bond correlation method. It returns six class counts, per-water classes, fractions, and the unique O–O network. The default cutoff is 0.35 nm. The `state` argument uses one-based PyMOL states and defaults to 1.
 - **`mark_chill_plus`** — draw the non-liquid CHILL+ O–O network as a color-coded CGO overlay named `chill_plus` for `render_image`. It uses the same one-based `state` argument.
+- **Performance** — `chill_plus` uses a sparse cell list for orthorhombic cells, including 90° angle roundoff within a scale-aware machine-precision tolerance. It keeps the canonical MIC distance check. It uses a bounded-temporary-memory O(n²) fallback for real tilts. Adjacency and edge outputs still scale with the edge count. Large triclinic systems need a separate benchmark.
 
 <p align="center"><img src="./assets/cages_demo.png" width="66%" /><br/><em>Detected sII cages drawn as wireframe polyhedra: 5¹² dodecahedra (cyan) around a 5¹²6⁴ cage (red), sharing faces.</em></p>
 
