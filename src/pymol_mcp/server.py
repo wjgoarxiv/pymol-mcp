@@ -106,10 +106,18 @@ def fetch_pdb(
     return SESSION.call(_fetch, timeout=120)
 
 
+def _object_names(cmd) -> list[str]:
+    """Molecular objects plus CGO overlays such as `cages` and `chill_plus`."""
+    names = list(cmd.get_names("objects"))
+    if not names:
+        names = list(cmd.get_object_list())
+    return names
+
+
 @mcp.tool
 def list_objects() -> list[str]:
-    """List all loaded object names in the current PyMOL session."""
-    return SESSION.call(lambda cmd: list(cmd.get_object_list()))
+    """List all loaded object names in the current PyMOL session, including CGO overlays."""
+    return SESSION.call(_object_names)
 
 
 @mcp.tool
@@ -118,13 +126,26 @@ def get_object_info(
 ) -> dict:
     """Return atom count, state count, and chains for a loaded object."""
     def _info(cmd):
-        if name not in cmd.get_object_list():
-            raise ToolError(f"No object named '{name}'. Loaded: {cmd.get_object_list()}")
+        names = _object_names(cmd)
+        if name not in names:
+            raise ToolError(f"No object named '{name}'. Loaded: {names}")
+        try:
+            n_atoms = int(cmd.count_atoms(name))
+        except Exception:
+            n_atoms = 0
+        try:
+            n_states = int(cmd.count_states(name))
+        except Exception:
+            n_states = 1
+        try:
+            chains = list(cmd.get_chains(name))
+        except Exception:
+            chains = []
         return {
             "object": name,
-            "n_atoms": cmd.count_atoms(name),
-            "n_states": cmd.count_states(name),
-            "chains": list(cmd.get_chains(name)),
+            "n_atoms": n_atoms,
+            "n_states": n_states,
+            "chains": chains,
         }
 
     return SESSION.call(_info)
@@ -408,6 +429,45 @@ def turn(
     return SESSION.call(lambda cmd: (cmd.turn(axis, angle), f"turned {axis} {angle}")[1])
 
 
+@mcp.tool
+def set_projection(
+    mode: Annotated[
+        Literal["orthographic", "perspective"],
+        Field(description="Camera projection for subsequent renders."),
+    ] = "orthographic",
+    field_of_view: Annotated[
+        float | None,
+        Field(
+            description="Perspective field of view in degrees (PyMOL default is 20). Ignored while orthographic.",
+            gt=0,
+            le=90,
+        ),
+    ] = None,
+) -> dict:
+    """Set orthographic or perspective projection for later `render_image` / `save_file` calls.
+
+    Orthographic keeps parallel cage edges (publication lattice views). Perspective
+    adds depth; raise `field_of_view` (e.g. 40) to make the difference obvious.
+    """
+    def _proj(cmd):
+        cmd.set("orthoscopic", 1 if mode == "orthographic" else 0)
+        if field_of_view is not None:
+            cmd.set("field_of_view", float(field_of_view))
+        raw = cmd.get("orthoscopic")
+        if isinstance(raw, str):
+            ortho = 1 if raw.strip().lower() in ("on", "1", "true", "yes") else 0
+        else:
+            ortho = 1 if float(raw) else 0
+        fov = float(cmd.get("field_of_view"))
+        return {
+            "mode": "orthographic" if ortho else "perspective",
+            "orthoscopic": ortho,
+            "field_of_view": fov,
+        }
+
+    return SESSION.call(_proj)
+
+
 # ----------------------------------------------------------------------------
 # Measurement
 # ----------------------------------------------------------------------------
@@ -483,6 +543,9 @@ def save_file(
 ) -> dict:
     """Save a selection/session to a file (format from extension)."""
     def _save(cmd):
+        parent = os.path.dirname(os.path.abspath(path))
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         cmd.save(path, selection, state)
         ok = os.path.exists(path)
         return {"path": path, "saved": ok, "bytes": os.path.getsize(path) if ok else 0}

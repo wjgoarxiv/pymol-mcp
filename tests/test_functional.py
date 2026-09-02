@@ -5,6 +5,7 @@ subprocess test in test_stdio_purity.py exists for.
 """
 
 import asyncio
+import os
 
 from conftest import write_minimal_pdb
 from fastmcp import Client
@@ -166,6 +167,69 @@ def test_mark_cages_defaults_use_bold_geometry():
             properties = mark.inputSchema["properties"]
             assert properties["edge_radius"]["default"] == 0.18
             assert properties["vertex_radius"]["default"] == 0.38
+            return True
+
+    assert _run(scenario())
+
+
+def test_set_projection_orthographic_and_perspective():
+    async def scenario():
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+            assert any(tool.name == "set_projection" for tool in tools)
+            ortho = (await client.call_tool("set_projection", {"mode": "orthographic"})).data
+            assert ortho["mode"] == "orthographic", ortho
+            assert ortho["orthoscopic"] == 1, ortho
+            persp = (
+                await client.call_tool(
+                    "set_projection",
+                    {"mode": "perspective", "field_of_view": 40},
+                )
+            ).data
+            assert persp["mode"] == "perspective", persp
+            assert persp["orthoscopic"] == 0, persp
+            assert persp["field_of_view"] == 40, persp
+            bad = await client.call_tool(
+                "set_projection",
+                {"mode": "isometric"},
+                raise_on_error=False,
+            )
+            assert bad.is_error
+            return True
+
+    assert _run(scenario())
+
+
+def test_save_file_creates_parent_directory(tmp_path):
+    pdb = write_minimal_pdb(tmp_path)
+    nested = tmp_path / "nested" / "out" / "tiny.pdb"
+
+    async def scenario():
+        async with Client(mcp) as client:
+            await client.call_tool("reset_session", {})
+            await client.call_tool("load_structure", {"path": pdb})
+            saved = (await client.call_tool("save_file", {"path": str(nested), "selection": "all"})).data
+            assert saved["saved"] is True, saved
+            assert nested.is_file() and nested.stat().st_size > 0
+            return True
+
+    assert _run(scenario())
+
+
+def test_save_file_writes_cage_png(tmp_path):
+    gro = os.path.join(os.path.dirname(__file__), "fixtures", "hydrate_sI.gro")
+
+    async def scenario():
+        async with Client(mcp) as client:
+            await client.call_tool("reset_session", {})
+            await client.call_tool("load_structure", {"path": gro, "object_name": "sI"})
+            await client.call_tool("mark_cages", {"selection": "sI"})
+            await client.call_tool("hide", {"representation": "everything", "selection": "sI"})
+            png = str(tmp_path / "cages.png")
+            saved = (await client.call_tool("save_file", {"path": png, "selection": "all"})).data
+            assert saved["saved"] is True, saved
+            assert saved["bytes"] > 100, saved
+            assert os.path.getsize(png) > 100
             return True
 
     assert _run(scenario())

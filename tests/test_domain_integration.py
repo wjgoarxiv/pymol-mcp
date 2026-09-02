@@ -12,7 +12,10 @@ from pymol.cgo import COLOR, CYLINDER, SPHERE
 
 from pymol_mcp.server import SESSION, mcp
 
-GRO_SII = os.path.join(os.path.dirname(__file__), "fixtures", "hydrate_sII.gro")
+_FIX = os.path.dirname(__file__)
+GRO_SI = os.path.join(_FIX, "fixtures", "hydrate_sI.gro")
+GRO_SII = os.path.join(_FIX, "fixtures", "hydrate_sII.gro")
+GRO_SH = os.path.join(_FIX, "fixtures", "hydrate_sH.gro")
 
 
 def _run(coro):
@@ -116,6 +119,10 @@ def test_identify_cages_via_mcp():
             assert marked["object"] == "cages", marked
             assert marked["n_cages"] == 192, marked
             assert marked["drawn"].get("5^12") == 128 and marked["drawn"].get("5^12 6^4") == 64, marked
+            objs = (await client.call_tool("list_objects", {})).data
+            assert "cages" in objs, objs
+            info = (await client.call_tool("get_object_info", {"name": "cages"})).data
+            assert info["object"] == "cages", info
             return True
 
     assert _run(scenario())
@@ -174,6 +181,55 @@ def test_chill_plus_rejects_an_invalid_periodic_box():
                 raise_on_error=False,
             )
             assert result.is_error
+            return True
+
+    assert _run(scenario())
+
+
+@pytest.mark.skipif(not os.path.exists(GRO_SI), reason="sI reference .gro not present")
+def test_identify_cages_and_render_sI():
+    async def scenario():
+        async with Client(mcp) as client:
+            await client.call_tool("reset_session", {})
+            load = (await client.call_tool("load_structure", {"path": GRO_SI, "object_name": "sI"})).data
+            assert load["n_atoms"] == 1472, load
+            res = (await client.call_tool("identify_cages", {"selection": "sI"})).data
+            assert res["structure_type"] == "sI", res
+            assert res["counts"].get("5^12") == 16, res
+            assert res["counts"].get("5^12 6^2") == 48, res
+            marked = (await client.call_tool("mark_cages", {"selection": "sI"})).data
+            assert marked["object"] == "cages", marked
+            assert marked["n_cages"] == 64, marked
+            rendered = await client.call_tool("render_image", {"selection": "all", "width": 256, "height": 256})
+            assert rendered.content and rendered.content[0].type == "image", rendered
+            return True
+
+    assert _run(scenario())
+
+
+@pytest.mark.skipif(not os.path.exists(GRO_SH), reason="sH reference .gro not present")
+def test_identify_cages_and_render_sH():
+    async def scenario():
+        async with Client(mcp) as client:
+            await client.call_tool("reset_session", {})
+            load = (await client.call_tool("load_structure", {"path": GRO_SH, "object_name": "sH"})).data
+            assert load["n_atoms"] == 1632, load
+            res = (await client.call_tool("identify_cages", {"selection": "sH"})).data
+            assert res["structure_type"] == "sH", res
+            assert res["counts"].get("5^12") == 48, res
+            assert res["counts"].get("4^3 5^6 6^3") == 32, res
+            assert res["counts"].get("5^12 6^8") == 16, res
+            marked = (await client.call_tool("mark_cages", {"selection": "sH"})).data
+            assert marked["n_cages"] == 96, marked
+            filtered = (
+                await client.call_tool(
+                    "mark_cages",
+                    {"selection": "sH", "cage_types": ["5^12 6^8"]},
+                )
+            ).data
+            assert filtered["n_cages"] == 16, filtered
+            rendered = await client.call_tool("render_image", {"selection": "all", "width": 256, "height": 256})
+            assert rendered.content and rendered.content[0].type == "image", rendered
             return True
 
     assert _run(scenario())

@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/PyMOL-open--source%203.x-1e40af" />
   <img src="https://img.shields.io/badge/MCP-FastMCP%203-blueviolet" />
   <img src="https://img.shields.io/badge/tests-passing-brightgreen" />
+  <a href="https://glama.ai/mcp/servers/wjgoarxiv/pymol-mcp"><img src="https://glama.ai/mcp/servers/wjgoarxiv/pymol-mcp/badges/score.svg" alt="wjgoarxiv/pymol-mcp MCP server" /></a>
 </p>
 
 ---
@@ -39,6 +40,7 @@
 | **Domain science** | cage perception (TRACE), occupancy, H-bonds, F3/F4 — **validated** |
 | **Robustness** | worker-thread session, **stdout-safe** transport, pytest suite |
 | **Safety** | arbitrary-code passthrough **off by default** |
+| **Directory** | [Glama](https://glama.ai/mcp/servers/wjgoarxiv/pymol-mcp) (`wjgoarxiv/pymol-mcp`, release v0.1.0) and [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers) Biology ([PR #9110](https://github.com/punkpeye/awesome-mcp-servers/pull/9110), merged) |
 
 ## Features
 
@@ -104,6 +106,7 @@ Then ask your agent things like:
 Load ./hydrate.gro, color water by F4 order parameter, and render it.
 Load md.gro + traj.xtc, show CO2 guests as spheres, render frame 50.
 What's the mean H-bond coordination of the water in this structure?
+Load tests/fixtures/hydrate_sII.gro, identify and mark cages, hide the waters, set orthographic projection, and render.
 ```
 
 ## Tool Catalog
@@ -113,7 +116,7 @@ What's the mean H-bond coordination of the water in this structure?
 | **Session / IO** | `load_structure` · `fetch_pdb` · `list_objects` · `get_object_info` · `reset_session` |
 | **Selection** | `select` · `get_selection_info` |
 | **Representation** | `show` · `hide` · `color` · `spectrum` · `set_background` |
-| **View / Render** | `orient` · `zoom` · `turn` · `render_image` → 🖼️ inline PNG |
+| **View / Render** | `orient` · `zoom` · `turn` · `set_projection` · `render_image` → 🖼️ inline PNG |
 | **Measurement** | `measure_distance` · `measure_angle` · `measure_dihedral` · `align` · `save_file` |
 | **Trajectory / MD** | `load_trajectory` (GROMACS/DCD) · `load_trajectory_mda` (LAMMPS/NetCDF via MDAnalysis) |
 | **Clathrate domain** | `identify_cages` (TRACE) · `cage_occupancy` · `mark_cages` · `hbond_network` · `order_parameter` (F3 / F4) · `chill_plus` · `mark_chill_plus` |
@@ -134,6 +137,8 @@ Use `ray_style="default"` explicitly to preserve the current PyMOL settings.
 The PyMOLWiki profiles set antialiasing to 2. They use the built-in PyMOL ray tracer.
 They restore the previous ray settings after each render. Set a white background for the closest match to the PyMOLWiki examples.
 
+`set_projection` switches the camera between **orthographic** (parallel cage edges, typical publication lattice) and **perspective**. PyMOL's default field of view is 20°; raise it (e.g. 40) to make depth obvious. `save_file` writes a PNG/PDB/PSE to disk and creates missing parent directories. `list_objects` includes CGO overlays such as `cages` and `chill_plus`.
+
 ```json
 {
   "selection": "all",
@@ -150,9 +155,9 @@ Ported from a validated Rust reference implementation and re-checked against gro
 a signed `atan2` dihedral for F4, and a periodic-image KDTree for neighbour search.
 
 - **`identify_cages`** — full TRACE cage perception: ring finding → geometric validation → constraint-propagation assembly → Euler (SEC) validation → face-count typing (5¹², 5¹²6², 5¹²6⁴, …) and an sI/sII/sH structure call.
-- **`cage_occupancy`** — assign guest molecules (CO₂/CH₄) to cages and report per-type occupancy (θ_S, θ_L).
-- **`mark_cages`** — drop a colored sphere at each cage centre so `render_image` can show the cage lattice.
-- **`mark_cages` geometry defaults** — use a bold 0.18 Å cage edge radius and a 0.38 Å vertex radius by default. Pass `edge_radius` or `vertex_radius` to override them.
+- **`cage_occupancy`** — assign guest molecules (CO₂/CH₄) to cages and report per-type occupancy (θ_S, θ_L). Guests are detected only from residue names containing `CO2`, `CH4`, or `METH` (carbon atom). The bundled `tests/fixtures/hydrate_sI.gro` is TIP4P water only, so occupancy is zero there.
+- **`mark_cages`** — draw each cage as a **wireframe polyhedron** (CGO object `cages`): cylinders on O–O edges and spheres at oxygen vertices, colored by type (5¹² cyan, 5¹²6² violet, 5¹²6⁴ red, 5¹²6⁸ blue, 4³5⁶6³ lime). Hide the water object, then `render_image` or `save_file`.
+- **`mark_cages` geometry defaults** — use a bold 0.18 Å cage edge radius and a 0.38 Å vertex radius by default. Pass `edge_radius` or `vertex_radius` to override them. `cage_types` draws a subset (e.g. `["5^12 6^8"]`). Cages that wrap the periodic box can appear as fragments; that is a drawing limit, not a miscount.
 - **`order_parameter`** — F4 (torsional) and F3 (three-body angular). F4 ≈ 0.7–0.95 → hydrate, ≈ 0 → liquid, ≈ −0.4 → ice Ih.
 - **`hbond_network`** — water H-bond graph (O–O ≤ 0.36 nm and a donor H–O···O angle < 35°) with coordination stats.
 - **`chill_plus`** — classify each water as liquid, ice, or hydrate with the CHILL+ q3 bond correlation method. It returns six class counts, per-water classes, fractions, and the unique O–O network. The default cutoff is 0.35 nm. The `state` argument uses one-based PyMOL states and defaults to 1.
@@ -163,9 +168,23 @@ a signed `atan2` dihedral for F4, and a periodic-image KDTree for neighbour sear
 
 > [!TIP]
 > **Validated against ground truth:** on a structure II reference, `identify_cages` finds exactly **128 × 5¹²
-> + 64 × 5¹²6⁴** cages (the textbook 2:1 sII lattice), and on structure I exactly **16 × 5¹² + 48 × 5¹²6²**;
+> + 64 × 5¹²6⁴** cages (the textbook 2:1 sII lattice), on structure I exactly **16 × 5¹² + 48 × 5¹²6²**,
+> and on structure H **48 × 5¹² + 32 × 4³5⁶6³ + 16 × 5¹²6⁸** (16 unit cells);
 > F4 over the first ten waters reproduces the reference value **0.926698** exactly, F3 = 0.0028
 > (hydrate-like ≤ 0.04), and the H-bond network is a perfect tetrahedral (mean coordination 4.00) framework.
+
+A typical cage figure, exercised through the MCP tools:
+
+```
+load_structure  tests/fixtures/hydrate_sII.gro  (object sII)
+identify_cages  → structure_type sII
+mark_cages      → CGO object "cages"
+hide            water representation
+set_projection  orthographic   (or perspective, field_of_view=40)
+set_background  white
+render_image    / save_file path.png
+reset_session   before the next structure
+```
 
 ## How it works
 

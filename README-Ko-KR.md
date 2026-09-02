@@ -13,6 +13,7 @@
   <img src="https://img.shields.io/badge/PyMOL-open--source%203.x-1e40af" />
   <img src="https://img.shields.io/badge/MCP-FastMCP%203-blueviolet" />
   <img src="https://img.shields.io/badge/tests-passing-brightgreen" />
+  <a href="https://glama.ai/mcp/servers/wjgoarxiv/pymol-mcp"><img src="https://glama.ai/mcp/servers/wjgoarxiv/pymol-mcp/badges/score.svg" alt="wjgoarxiv/pymol-mcp MCP server" /></a>
 </p>
 
 ---
@@ -39,6 +40,7 @@
 | **도메인 과학** | 케이지 인식(TRACE), 점유율, 수소결합, F3/F4 — **검증됨** |
 | **견고성** | 워커 스레드 세션, **stdout 안전** 전송, pytest 스위트 |
 | **안전성** | 임의 코드 실행 패스스루 **기본 꺼짐** |
+| **디렉터리** | [Glama](https://glama.ai/mcp/servers/wjgoarxiv/pymol-mcp) (`wjgoarxiv/pymol-mcp`, 릴리스 v0.1.0) 및 [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers) Biology ([PR #9110](https://github.com/punkpeye/awesome-mcp-servers/pull/9110), 머지됨) |
 
 ## 기능
 
@@ -102,6 +104,7 @@ args = ["-m", "pymol_mcp"]
 ./hydrate.gro 를 로드하고, 물을 F4 오더 파라미터로 색칠한 뒤 렌더링해줘.
 md.gro + traj.xtc 를 로드하고, CO2 게스트를 구로 표시한 뒤 50번째 프레임을 렌더링해줘.
 이 구조에서 물의 평균 수소결합 배위수는 얼마야?
+tests/fixtures/hydrate_sII.gro 를 로드하고 케이지를 찾아 그린 뒤, 물은 숨기고 직교 투영으로 렌더링해줘.
 ```
 
 ## 도구 카탈로그
@@ -111,7 +114,7 @@ md.gro + traj.xtc 를 로드하고, CO2 게스트를 구로 표시한 뒤 50번�
 | **세션 / IO** | `load_structure` · `fetch_pdb` · `list_objects` · `get_object_info` · `reset_session` |
 | **선택** | `select` · `get_selection_info` |
 | **표현** | `show` · `hide` · `color` · `spectrum` · `set_background` |
-| **뷰 / 렌더** | `orient` · `zoom` · `turn` · `render_image` → 🖼️ 인라인 PNG |
+| **뷰 / 렌더** | `orient` · `zoom` · `turn` · `set_projection` · `render_image` → 🖼️ 인라인 PNG |
 | **측정** | `measure_distance` · `measure_angle` · `measure_dihedral` · `align` · `save_file` |
 | **궤적 / MD** | `load_trajectory` (GROMACS/DCD) · `load_trajectory_mda` (LAMMPS/NetCDF, MDAnalysis) |
 | **클라스레이트 도메인** | `identify_cages` (TRACE) · `cage_occupancy` · `mark_cages` · `hbond_network` · `order_parameter` (F3 / F4) · `chill_plus` · `mark_chill_plus` |
@@ -132,6 +135,8 @@ md.gro + traj.xtc 를 로드하고, CO2 게스트를 구로 표시한 뒤 50번�
 PyMOLWiki 프로필은 안티앨리어싱을 2로 설정합니다. 기본 PyMOL 레이트레이서를 사용합니다.
 렌더링이 끝나면 이전 레이트레이싱 설정을 복원합니다. PyMOLWiki 예시와 가장 비슷한 결과에는 흰색 배경을 사용하세요.
 
+`set_projection`은 카메라를 **직교**(평행한 케이지 변, 논문용 격자)와 **원근** 사이로 바꿉니다. PyMOL 기본 시야각은 20°이며, 깊이감을 분명히 하려면 40 정도로 올리면 됩니다. `save_file`은 PNG/PDB/PSE를 디스크에 쓰고 없는 상위 폴더를 만듭니다. `list_objects`는 `cages`, `chill_plus` 같은 CGO 오버레이도 포함합니다.
+
 ```json
 {
   "selection": "all",
@@ -147,9 +152,9 @@ PyMOLWiki 프로필은 안티앨리어싱을 2로 설정합니다. 기본 PyMOL 
 분수좌표 기반 **최소 이미지 규약**(직교·삼사정계 모두), F4용 부호 있는 `atan2` 이면각, 주기 이미지 KDTree 이웃 탐색을 사용합니다.
 
 - **`identify_cages`** — 완전한 TRACE 케이지 인식: 링 탐색 → 기하 검증 → 제약 전파 조립 → 오일러(SEC) 검증 → 면 개수로 유형 분류(5¹², 5¹²6², 5¹²6⁴, …) 및 sI/sII/sH 구조 판정.
-- **`cage_occupancy`** — 게스트 분자(CO₂/CH₄)를 케이지에 할당하고 유형별 점유율(θ_S, θ_L) 보고.
-- **`mark_cages`** — 각 케이지 중심에 색상 구를 배치하여 `render_image`로 케이지 격자를 시각화.
-- **`mark_cages` 기하 기본값** — 기본 케이지 edge 반지름은 0.18 Å, vertex 반지름은 0.38 Å입니다. `edge_radius` 또는 `vertex_radius`로 재정의할 수 있습니다.
+- **`cage_occupancy`** — 게스트 분자(CO₂/CH₄)를 케이지에 할당하고 유형별 점유율(θ_S, θ_L) 보고. 게스트는 residue 이름에 `CO2`, `CH4`, 또는 `METH`가 있는 탄소 원자만 인식합니다. 동봉된 `tests/fixtures/hydrate_sI.gro`는 TIP4P 물만 있으므로 점유율은 0입니다.
+- **`mark_cages`** — 각 케이지를 **와이어프레임 다면체**(CGO 객체 `cages`)로 그립니다. O–O 변은 실린더, 산소 꼭짓점은 구이며 유형별 색(5¹² 청록, 5¹²6² 보라, 5¹²6⁴ 빨강, 5¹²6⁸ 파랑, 4³5⁶6³ 라임)입니다. 물 객체를 숨긴 뒤 `render_image` 또는 `save_file`을 호출하세요.
+- **`mark_cages` 기하 기본값** — 기본 케이지 edge 반지름은 0.18 Å, vertex 반지름은 0.38 Å입니다. `edge_radius` 또는 `vertex_radius`로 재정의할 수 있습니다. `cage_types`로 일부만 그릴 수 있습니다(예: `["5^12 6^8"]`). 주기 경계를 넘는 케이지는 조각처럼 보일 수 있으며, 이는 그리기 한계이지 개수 오류가 아닙니다.
 - **`order_parameter`** — F4(비틀림), F3(3체 각도). F4 ≈ 0.7–0.95 → 하이드레이트, ≈ 0 → 액체, ≈ −0.4 → 얼음 Ih.
 - **`hbond_network`** — 물 수소결합 그래프 (O–O ≤ 0.36 nm 및 도너 H–O···O 각 < 35°) + 배위 통계.
 - **`chill_plus`** — CHILL+ q3 결합 상관 방법으로 각 물을 액체·얼음·하이드레이트로 분류합니다. 6개 클래스별 개수, 물별 클래스, 분율, 고유 O–O 네트워크를 반환합니다. 기본 컷오프는 0.35 nm입니다. `state`는 1부터 시작하는 PyMOL 상태이며 기본값은 1입니다.
@@ -160,8 +165,22 @@ PyMOLWiki 프로필은 안티앨리어싱을 2로 설정합니다. 기본 PyMOL 
 
 > [!TIP]
 > **정답값 대비 검증:** 구조 II 레퍼런스에서 `identify_cages`가 정확히 **128 × 5¹² + 64 × 5¹²6⁴** 케이지(교과서적 2:1 sII 격자)를,
-> 구조 I에서 정확히 **16 × 5¹² + 48 × 5¹²6²**를 찾습니다. 첫 10개 물 분자의 F4는 레퍼런스 값 **0.926698**을 정확히 재현하고,
+> 구조 I에서 정확히 **16 × 5¹² + 48 × 5¹²6²**를, 구조 H에서 **48 × 5¹² + 32 × 4³5⁶6³ + 16 × 5¹²6⁸**(단위셀 16개)를 찾습니다.
+> 첫 10개 물 분자의 F4는 레퍼런스 값 **0.926698**을 정확히 재현하고,
 > F3 = 0.0028 (하이드레이트-유사 ≤ 0.04), 수소결합 네트워크는 완벽한 정사면체(평균 배위수 4.00) 골격입니다.
+
+MCP 도구로 돌린 전형적인 케이지 그림 절차:
+
+```
+load_structure  tests/fixtures/hydrate_sII.gro  (object sII)
+identify_cages  → structure_type sII
+mark_cages      → CGO 객체 "cages"
+hide            물 표현
+set_projection  orthographic   (또는 perspective, field_of_view=40)
+set_background  white
+render_image    / save_file path.png
+reset_session   다음 구조 전에
+```
 
 ## 동작 원리
 

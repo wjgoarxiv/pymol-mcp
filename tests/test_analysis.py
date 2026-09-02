@@ -90,6 +90,17 @@ def test_cage_perception_sI():
 
 
 @pytest.mark.skipif(not os.path.exists(GRO_SH), reason="sH reference .gro not present")
+def test_cage_perception_sH():
+    """TRACE cage perception on structure H: 48x 5^12 + 32x 4^3 5^6 6^3 + 16x 5^12 6^8."""
+    waters, _, box = parse_gro(GRO_SH)
+    res = identify_cages(waters, Cell.from_box(box))
+    assert res["counts"].get("5^12") == 48, res["counts"]
+    assert res["counts"].get("4^3 5^6 6^3") == 32, res["counts"]
+    assert res["counts"].get("5^12 6^8") == 16, res["counts"]
+    assert classify_structure(res["counts"]) == "sH"
+
+
+@pytest.mark.skipif(not os.path.exists(GRO_SH), reason="sH reference .gro not present")
 def test_f4_regression_sH():
     """Second anchor (implementation-pinned regression guard on the sH framework)."""
     waters, _, box = parse_gro(GRO_SH)
